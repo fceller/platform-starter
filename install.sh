@@ -209,7 +209,7 @@ kubectl get pods -n ${HELM_NAMESPACE}
 echo
 
 echo "============================================================================="
-echo "installing the ARANGODB operator"
+echo "Installing the ARANGODB operator"
 echo "============================================================================="
 
 NAMESPACE_ARANGODB=arangodb
@@ -223,3 +223,26 @@ helm upgrade -n ${NAMESPACE_ARANGODB} --create-namespace -i operator \
      --set "operator.args[0]=--deployment.feature.gateway=true"
 
 kubectl get pods -n ${NAMESPACE_ARANGODB}
+
+echo "============================================================================="
+echo "Installing a profile with credentials"
+echo "============================================================================="
+
+cat > /tmp/profile.$$.yaml <<'EOF'
+apiVersion: scheduler.arangodb.com/v1beta1
+kind: ArangoProfile
+metadata:
+  name: deployment-pull
+spec:
+  selectors:
+    label:
+      matchLabels: {}
+  template:
+    pod:
+      imagePullSecrets:
+        - <Secret Name>
+    priority: 129
+EOF
+
+info "installing profile /tmp/profile.$$.yaml"
+kubectl apply -f /tmp/profile.$$.yaml
