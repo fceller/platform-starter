@@ -175,7 +175,7 @@ kubectl cluster-info --context kind-${CLUSTER}
 echo
 
 echo "============================================================================="
-echo "Installing the certifiate manager"
+echo "Installing the certificate manager"
 echo "============================================================================="
 
 HELM_NAMESPACE=cert-manager
