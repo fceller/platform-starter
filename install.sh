@@ -106,6 +106,8 @@ if test "$INSTALL_KUBECTL" = "1"; then
     install_kubectl
 fi
 
+KUBECTL=`which kubectl`
+
 echo
 
 echo "============================================================================="
@@ -136,6 +138,8 @@ fi
 if test "$INSTALL_HELM" = "1"; then
     install_helm
 fi
+
+HELM=`which helm`
 
 echo
 
@@ -195,12 +199,12 @@ CREATE_CLUSTER=1
 
 info "checking if a cluster ${CLUSTER} already exists"
 
-if kind get clusters | grep -s "^${CLUSTER}$"; then
+if $KIND get clusters | grep -s "^${CLUSTER}$"; then
     info "a cluster '${CLUSTER}' already exists"
 
     if test "$NUKE_CLUSTER" = "1"; then
 	info "nuking this cluster"
-	kind delete cluster --name ${CLUSTER}
+	$KIND delete cluster --name ${CLUSTER}
     elif test "$REUSE_CLUSTER" != "1"; then
         fatal "cluster with name '${CLUSTER}' already exists. Use CLUSTER=...
        to use a different namespace. Use NUKE_CLUSTER=1 to nuke and
@@ -214,10 +218,10 @@ fi
 
 if test "$CREATE_CLUSTER" = "1"; then
     info "creatign cluster '${CLUSTER}'"
-    kind create cluster --name ${CLUSTER}
+    $KIND create cluster --name ${CLUSTER}
 fi
 
-kubectl cluster-info --context kind-${CLUSTER}
+$KUBECTL cluster-info --context kind-${CLUSTER}
 
 echo
 
@@ -225,33 +229,33 @@ echo "==========================================================================
 echo "Installing the certificate manager"
 echo "============================================================================="
 
-NAMESPACE_HELM=cert-manager
-VERSION_HELM=1.17.1
+NAMESPACE_CERT=cert-manager
+VERSION_CERT=1.17.1
 
 install_cert_manager() {
     info "adding jetstack repository"
-    helm repo add jetstack https://charts.jetstack.io
-    helm repo update
+    $HELM repo add jetstack https://charts.jetstack.io
+    $HELM repo update
 
     info "deleting old CRD"
-    kubectl delete crd --all
+    $KUBECTL delete crd --all
 
     info "installing the cert-manager"
-    helm install cert-manager jetstack/cert-manager \
-	 --namespace ${NAMESPACE_HELM} \
+    $HELM install cert-manager jetstack/cert-manager \
+	 --namespace ${NAMESPACE_CERT} \
 	 --create-namespace \
-	 --version v${VERSION_HELM} \
+	 --version v${VERSION_CERT} \
 	 --set crds.enabled=true
 
 }
 
-if test `kubectl get pods -n cert-manager | fgrep Running | wc -l` -ge 3; then
+if test `$KUBECTL get pods -n cert-manager | fgrep Running | wc -l` -ge 3; then
     info "cert-manager appears to be already running";
 else
     install_cert_manager
 fi
 
-kubectl get pods -n ${NAMESPACE_HELM}
+$KUBECTL get pods -n ${NAMESPACE_CERT}
 
 echo
 
@@ -263,13 +267,13 @@ NAMESPACE_ARANGODB=arangodb
 VERSION_OPERATOR=1.2.47
 
 info "installing/upgrading operator in version ${VERSION_OPERATOR}"
-helm upgrade -n ${NAMESPACE_ARANGODB} --create-namespace -i operator \
+$HELM upgrade -n ${NAMESPACE_ARANGODB} --create-namespace -i operator \
      https://github.com/arangodb/kube-arangodb/releases/download/${VERSION_OPERATOR}/kube-arangodb-${VERSION_OPERATOR}.tgz \
      --set "webhooks.enabled=true" \
      --set "certificate.enabled=true" \
      --set "operator.args[0]=--deployment.feature.gateway=true"
 
-kubectl get pods -n ${NAMESPACE_ARANGODB}
+$KUBECTL get pods -n ${NAMESPACE_ARANGODB}
 
 echo
 
@@ -294,7 +298,7 @@ spec:
 EOF
 
 info "installing profile /tmp/profile.$$.yaml"
-kubectl apply -f /tmp/profile.$$.yaml
+$KUBECTL apply -f /tmp/profile.$$.yaml
 rm -f /tmp/profile.$$.yaml
 
 echo
@@ -304,10 +308,10 @@ echo "Installing registry"
 echo "============================================================================="
 
 info "installing platform registry"
-aop -n $NAMESPACE_ARANGODB registry install \
+$AOP -n $NAMESPACE_ARANGODB registry install \
     https://github.com/arangodb/arangodb-platform-config/blob/development/configuration.yml
 
-aop -n $NAMESPACE_ARANGODB registry install arangodb-platform-ui
+$AOP -n $NAMESPACE_ARANGODB registry install arangodb-platform-ui
 
 echo
 
@@ -334,7 +338,7 @@ info "created /tmp/simple.$$.yaml"
 
 info "installing platform-simple-single"
 
-kubectl apply -n $NAMESPACE_ARANGODB -f /tmp/simple.$$.yaml
+$KUBECTL apply -n $NAMESPACE_ARANGODB -f /tmp/simple.$$.yaml
 
 echo
 
@@ -343,10 +347,10 @@ echo "Enable Platform UI"
 echo "============================================================================="
 
 info "enabling platform ui"
-aop -n $NAMESPACE_ARANGODB service enable-service platform-simple-single arangodb-platform-ui
+$AOP -n $NAMESPACE_ARANGODB service enable-service platform-simple-single arangodb-platform-ui
 
 echo
 
-kubectl -n $NAMESPACE_ARANGODB get pods
+$KUBECTL -n $NAMESPACE_ARANGODB get pods
 
 echo
