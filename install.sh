@@ -46,7 +46,9 @@ KIND=/usr/local/bin/kind
 install_kind() {
     sudo mkdir -p /usr/local/bin
     info "downloading kind version ${VERSION_KIND}" 
-    wget -q -O /tmp/kind.$$ https://github.com/kubernetes-sigs/kind/releases/download/v${VERSION_KIND}/kind-linux-amd64
+    wget -q -O /tmp/kind.$$ \
+	 https://github.com/kubernetes-sigs/kind/releases/download/v${VERSION_KIND}/kind-linux-amd64 \
+	|| fatal "download failed"
     sudo mv /tmp/kind.$$ /usr/local/bin/kind
     sudo chmod 755 /usr/local/bin/kind
     sudo chown root:root /usr/local/bin/kind
@@ -138,6 +140,51 @@ fi
 echo
 
 echo "============================================================================="
+echo "Checking if arangodb_operator_platform is installed"
+echo "============================================================================="
+
+INSTALL_AOP=0
+VERSION_AOP=1.2.47
+REINSTALL_AOP=${REINSTALL_AOP:-0}
+AOP=/usr/local/bin/arangodb_operator_platform
+
+install_aop() {
+    sudo mkdir -p /usr/local/bin
+    info "downloading arangodb_operator_platform version ${VERSION_AOP}"
+    wget -q -O /tmp/aop.$$ \
+	 https://github.com/arangodb/kube-arangodb/releases/download/${VERSION_AOP}/arangodb_operator_platform_linux_amd64 \
+	 || fatal "download failed"
+    sudo mv /tmp/aop.$$ /usr/local/bin/arangodb_operator_platform
+    sudo chmod 755 /usr/local/bin/arangodb_operator_platform
+    sudo chown root:root /usr/local/bin/arangodb_operator_platform
+    sudo rm -f /usr/local/bin/aop
+    sudo ln -s /usr/local/bin/arangodb_operator_platform /usr/local/bin/aop
+    info "installed /usr/local/bin/arangodb_operator_platform"
+    ls -l /usr/local/bin/arangodb_operator_platform
+    if test `which arangodb_operator_platform` != ${AOP}; then
+      warn "cannot locate arangodb_operator_platform, ensure that '/usr/local/bin' is in the PATH"
+    fi
+}
+
+if command_exists arangodb_operator_platform; then
+    info "found arangodb_operator_platform command"
+
+    if test "$REINSTALL_AOP" = "1"; then
+	info "reinstalling arangodb_operator_platform"
+	INSTALL_AOP=1
+    fi
+else
+    info "missing arangodb_operator_platform command, trying to install"
+    INSTALL_AOP=1
+fi
+
+if test "$INSTALL_AOP" = "1"; then
+    install_aop
+fi
+
+echo
+
+echo "============================================================================="
 echo "create a new K8S cluster"
 echo "============================================================================="
 
@@ -178,8 +225,8 @@ echo "==========================================================================
 echo "Installing the certificate manager"
 echo "============================================================================="
 
-HELM_NAMESPACE=cert-manager
-HELM_VERSION=1.17.1
+NAMESPACE_HELM=cert-manager
+VERSION_HELM=1.17.1
 
 install_cert_manager() {
     info "adding jetstack repository"
@@ -191,9 +238,9 @@ install_cert_manager() {
 
     info "installing the cert-manager"
     helm install cert-manager jetstack/cert-manager \
-	 --namespace ${HELM_NAMESPACE} \
+	 --namespace ${NAMESPACE_HELM} \
 	 --create-namespace \
-	 --version v${HELM_VERSION} \
+	 --version v${VERSION_HELM} \
 	 --set crds.enabled=true
 
 }
@@ -204,7 +251,7 @@ else
     install_cert_manager
 fi
 
-kubectl get pods -n ${HELM_NAMESPACE}
+kubectl get pods -n ${NAMESPACE_HELM}
 
 echo
 
@@ -224,6 +271,8 @@ helm upgrade -n ${NAMESPACE_ARANGODB} --create-namespace -i operator \
 
 kubectl get pods -n ${NAMESPACE_ARANGODB}
 
+echo
+
 echo "============================================================================="
 echo "Installing a profile with credentials"
 echo "============================================================================="
@@ -240,9 +289,64 @@ spec:
   template:
     pod:
       imagePullSecrets:
-        - <Secret Name>
+        - arangodb-secret
     priority: 129
 EOF
 
 info "installing profile /tmp/profile.$$.yaml"
 kubectl apply -f /tmp/profile.$$.yaml
+rm -f /tmp/profile.$$.yaml
+
+echo
+
+echo "============================================================================="
+echo "Installing registry"
+echo "============================================================================="
+
+info "installing platform registry"
+aop -n $NAMESPACE_ARANGODB registry install \
+    https://github.com/arangodb/arangodb-platform-config/blob/development/configuration.yml
+
+aop -n $NAMESPACE_ARANGODB registry install arangodb-platform-ui
+
+echo
+
+echo "============================================================================="
+echo "Creating simple deployment"
+echo "============================================================================="
+
+info "creating simple deployment"
+cat > /tmp/simple.$$.yaml <<'EOF'
+apiVersion: "database.arangodb.com/v1"
+kind: "ArangoDeployment"
+metadata:
+  name: "platform-simple-single"
+spec:
+  mode: Single
+  image: 'arangodb/enterprise:3.12.2'
+  gateway:
+    enabled: true
+    dynamic: true
+  gateways:
+    count: 1
+EOF
+info "created /tmp/simple.$$.yaml"
+
+info "installing platform-simple-single"
+
+kubectl apply -n $NAMESPACE_ARANGODB -f /tmp/simple.$$.yaml
+
+echo
+
+echo "============================================================================="
+echo "Enable Platform UI"
+echo "============================================================================="
+
+info "enabling platform ui"
+aop -n $NAMESPACE_ARANGODB service enable-service platform-simple-single arangodb-platform-ui
+
+echo
+
+kubectl -n $NAMESPACE_ARANGODB get pods
+
+echo
