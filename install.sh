@@ -484,11 +484,45 @@ if $KUBECTL -n $NAMESPACE_ARANGODB get pods | grep "\(ErrImagePull\|ImagePullBac
   fatal "cannot pull image"
 fi
 
+echo
+info "waiting for pods to run"
+
 while test `$KUBECTL -n $NAMESPACE_ARANGODB get pods | fgrep Running | wc -l` -lt 4; do
-    info "waiting for pods to start"
     $KUBECTL -n $NAMESPACE_ARANGODB get pods
     sleep 15
     echo
 done
 
 echo
+
+$KUBECTL -n $NAMESPACE_ARANGODB get pods
+
+info "waiting for service to appear"
+while ! `$KUBECTL -n $NAMESPACE_ARANGODB get svc | fgrep NodePort | fgrep -v pending | fgrep -q -- -ea`; do
+    $KUBECTL -n $NAMESPACE_ARANGODB get svc
+    sleep 15
+    echo
+done
+
+$KUBECTL -n $NAMESPACE_ARANGODB get svc
+
+echo
+
+echo "============================================================================="
+echo "Platform started"
+echo "============================================================================="
+
+IP=`kubectl get nodes -o wide | fgrep arangodb-control-plane | awk '{print $6}'`
+PORT=`kubectl -n $NAMESPACE_ARANGODB get svc | fgrep -- -ea | awk '{print $5}' | awk -F: '{print $2}' | awk -F/ '{print $1}'`
+
+info "In case you can reach the kind node directly, use the URL:"
+echo "https://$IP:$PORT/ui/"
+
+echo
+info "Use 'root' with no password for login"
+
+echo
+info "Otherwise use ssh and port forwarding:"
+info "Forwarding via SSH: ssh -L 8529:$IP:$PORT HOST"
+info "Forwaring URL: https://localhost:8529/ui/"
+
