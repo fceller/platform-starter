@@ -489,7 +489,28 @@ else
 
     if test $CREATE_CLUSTER -eq 1; then
 	info "creating cluster '${CLUSTER}'"
-	$SUDO_DOCKER $KIND create cluster --name ${CLUSTER}
+
+	if test $IS_DARWIN -eq 1; then
+	    cd $INSTALL_DIR
+	
+	    cat > config.yaml <<'EOF'
+apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 30000
+    hostPort: 30000
+    listenAddress: "0.0.0.0"
+    protocol: tcp
+- role: worker
+EOF
+	    $SUDO_DOCKER $KIND create cluster --name ${CLUSTER} --config=config.yaml
+
+	    cd $CURRENT_DIR
+	else
+	    $SUDO_DOCKER $KIND create cluster --name ${CLUSTER}
+	fi
     fi
 fi
 
@@ -762,6 +783,13 @@ echo "==========================================================================
 
 IP=`$SUDO_DOCKER $KUBECTL get nodes -o wide | fgrep arangodb-control-plane | awk '{print $6}'`
 PORT=`$SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get svc | fgrep -- -ea | awk '{print $5}' | awk -F: '{print $2}' | awk -F/ '{print $1}'`
+
+if test $IS_DARWIN -eq 1; then
+    kubectl -n $NAMESPACE_ARANGODB patch service platform-simple-single-ea -p \
+	    '{"spec": {"ports": [{"port": 8529, "nodePort": 30000}]}}'
+    IP=127.0.0.1
+    PORT=30000
+fi
 
 info "In case you can reach the kind node directly, use the URL:"
 echo "https://$IP:$PORT/ui/"
