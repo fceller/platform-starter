@@ -87,13 +87,27 @@ else
   fatal "docker command not found, please install docker first"
 fi
 
+SUDO_DOCKER=
+
+info "check if docker command works"
+if docker ps 2>&1 | fgrep -qi denied; then
+    warn "user '`whoami`' cannot execute docker, trying 'root' instead"
+
+    if sudo docker ps 2>&1 | fgrep -qi denied; then
+	fatal "cannot run docker command"
+    fi
+
+    info "need sudo for docker to work"
+    SUDO_DOCKER=sudo
+fi
+
 echo
 
-echo "============================================================================="
-echo "Checking if homebrew is available"
-echo "============================================================================="
-
 if test $IS_DARWIN -eq 1; then
+    echo "============================================================================="
+    echo "Checking if homebrew is available"
+    echo "============================================================================="
+
     if command_exists brew; then
 	info "good, brew command is available"
     else
@@ -456,12 +470,12 @@ if test $USE_MINIKUBE -eq 1; then
 else
     info "checking if a cluster ${CLUSTER} already exists"
 
-    if $KIND get clusters | grep -s "^${CLUSTER}$"; then
+    if $SUDO_DOCKER $KIND get clusters | grep -s "^${CLUSTER}$"; then
 	info "a cluster '${CLUSTER}' already exists"
 
 	if test $NUKE_CLUSTER -eq 1; then
 	    info "nuking this cluster"
-	    $KIND delete cluster --name ${CLUSTER}
+	    $SUDO_DOCKER $KIND delete cluster --name ${CLUSTER}
 	elif test $REUSE_CLUSTER -ne 1; then
             fatal "cluster with name '${CLUSTER}' already exists. Use CLUSTER=...
        to use a different namespace. Use NUKE_CLUSTER=1 to nuke and
@@ -475,11 +489,11 @@ else
 
     if test $CREATE_CLUSTER -eq 1; then
 	info "creating cluster '${CLUSTER}'"
-	$KIND create cluster --name ${CLUSTER}
+	$SUDO_DOCKER $KIND create cluster --name ${CLUSTER}
     fi
 fi
 
-$KUBECTL cluster-info --context kind-${CLUSTER}
+$SUDO_DOCKER $KUBECTL cluster-info --context kind-${CLUSTER}
 
 echo
 
@@ -529,8 +543,8 @@ type: kubernetes.io/dockerconfigjson
 EOF
 
 info "creating secret 'arangodb-ecr-secret'"
-kubectl create namespace $NAMESPACE_ARANGODB
-kubectl -n $NAMESPACE_ARANGODB apply -f secret.yaml
+$SUDO_DOCKER $KUBECTL create namespace $NAMESPACE_ARANGODB
+$SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB apply -f secret.yaml
 
 cd $CURRENT_DIR
 
@@ -542,27 +556,27 @@ echo "==========================================================================
 
 install_cert_manager() {
     info "adding jetstack repository"
-    $HELM repo add jetstack https://charts.jetstack.io
-    $HELM repo update
+    $SUDO_DOCKER $HELM repo add jetstack https://charts.jetstack.io
+    $SUDO_DOCKER $HELM repo update
 
     info "deleting old CRD"
-    $KUBECTL delete crd --all
+    $SUDO_DOCKER $KUBECTL delete crd --all
 
     info "installing the cert-manager (might take a few minutes)"
-    $HELM install cert-manager jetstack/cert-manager \
+    $SUDO_DOCKER $HELM install cert-manager jetstack/cert-manager \
 	 --namespace ${NAMESPACE_CERT} --create-namespace \
 	 --version v${VERSION_CERT} \
 	 --set crds.enabled=true
 
 }
 
-if test `$KUBECTL get pods -n cert-manager | fgrep Running | wc -l` -ge 3; then
+if test `$SUDO_DOCKER $KUBECTL get pods -n cert-manager | fgrep Running | wc -l` -ge 3; then
     info "cert-manager appears to be already running";
 else
     install_cert_manager
 fi
 
-$KUBECTL get pods -n ${NAMESPACE_CERT}
+$SUDO_DOCKER $KUBECTL get pods -n ${NAMESPACE_CERT}
 
 echo
 
@@ -572,30 +586,30 @@ echo "==========================================================================
 
 info "installing/upgrading operator in version ${VERSION_OPERATOR}"
 if test $IS_DARWIN -eq 1; then
-    $HELM upgrade -n ${NAMESPACE_ARANGODB} -i operator \
+    $SUDO_DOCKER $HELM upgrade -n ${NAMESPACE_ARANGODB} -i operator \
 	  https://github.com/arangodb/kube-arangodb/releases/download/${VERSION_OPERATOR}/kube-arangodb-${VERSION_OPERATOR}.tgz \
 	  --set "webhooks.enabled=true" \
 	  --set "certificate.enabled=true" \
 	  --set "operator.args[0]=--deployment.feature.gateway=true" \
 	  --set "operator.architectures={arm64}"
 else
-    $HELM upgrade -n ${NAMESPACE_ARANGODB} -i operator \
+    $SUDO_DOCKER $HELM upgrade -n ${NAMESPACE_ARANGODB} -i operator \
 	  https://github.com/arangodb/kube-arangodb/releases/download/${VERSION_OPERATOR}/kube-arangodb-${VERSION_OPERATOR}.tgz \
 	  --set "webhooks.enabled=true" \
 	  --set "certificate.enabled=true" \
 	  --set "operator.args[0]=--deployment.feature.gateway=true"
 fi
 
-$KUBECTL get pods -n ${NAMESPACE_ARANGODB}
+$SUDO_DOCKER $KUBECTL get pods -n ${NAMESPACE_ARANGODB}
 
-while $KUBECTL -n $NAMESPACE_ARANGODB get pods | fgrep arango-operator | fgrep -q ContainerCreating; do
+while $SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get pods | fgrep arango-operator | fgrep -q ContainerCreating; do
     echo
-    $KUBECTL -n $NAMESPACE_ARANGODB get pods
+    $SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get pods
     sleep 15
 done
 
 echo
-$KUBECTL -n $NAMESPACE_ARANGODB get pods
+$SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get pods
 
 echo
 
@@ -622,7 +636,7 @@ spec:
 EOF
 
 info "installing profile `pwd`/profile.yaml"
-$KUBECTL -n $NAMESPACE_ARANGODB apply -f profile.yaml
+$SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB apply -f profile.yaml
 
 cd $CURRENT_PWD
 
@@ -633,11 +647,11 @@ echo "Installing registry"
 echo "============================================================================="
 
 info "installing platform registry"
-$AOP -n $NAMESPACE_ARANGODB registry install \
+$SUDO_DOCKER $AOP -n $NAMESPACE_ARANGODB registry install \
     https://github.com/arangodb/arangodb-platform-config/blob/development/configuration.yml
 
 info "installing platform ui (might take a few minutes)"
-$AOP -n $NAMESPACE_ARANGODB registry install arangodb-platform-ui
+$SUDO_DOCKER $AOP -n $NAMESPACE_ARANGODB registry install arangodb-platform-ui
 
 echo
 
@@ -685,7 +699,7 @@ info "created simple.yaml"
 
 info "installing platform-simple-single"
 
-$KUBECTL apply -n $NAMESPACE_ARANGODB -f simple.yaml
+$SUDO_DOCKER $KUBECTL apply -n $NAMESPACE_ARANGODB -f simple.yaml
 
 cd $CURRENT_DIR
 
@@ -696,21 +710,21 @@ echo "Enable Platform UI"
 echo "============================================================================="
 
 info "enabling platform ui"
-$AOP -n $NAMESPACE_ARANGODB service enable-service platform-simple-single arangodb-platform-ui
+$SUDO_DOCKER $AOP -n $NAMESPACE_ARANGODB service enable-service platform-simple-single arangodb-platform-ui
 
 echo
 
 info "waiting for pods to show up"
-while test `$KUBECTL -n $NAMESPACE_ARANGODB get pods | wc -l` -lt 5; do
+while test `$SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get pods | wc -l` -lt 5; do
     echo
-    $KUBECTL -n $NAMESPACE_ARANGODB get pods
+    $SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get pods
     sleep 15
 done
 
 echo
-$KUBECTL -n $NAMESPACE_ARANGODB get pods
+$SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get pods
 
-if $KUBECTL -n $NAMESPACE_ARANGODB get pods | grep "\(ErrImagePull\|ImagePullBackOff\)"; then
+if $SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get pods | grep "\(ErrImagePull\|ImagePullBackOff\)"; then
   echo
   info "check 'kubectl -n $NAMESPACE_ARANGODB logs POD'"
   fatal "cannot pull image"
@@ -719,26 +733,26 @@ fi
 echo
 info "waiting for pods to run"
 
-while test `$KUBECTL -n $NAMESPACE_ARANGODB get pods | fgrep Running | wc -l` -lt 4; do
+while test `$SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get pods | fgrep Running | wc -l` -lt 4; do
     echo
-    $KUBECTL -n $NAMESPACE_ARANGODB get pods
+    $SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get pods
     sleep 15
 done
 
 echo
-$KUBECTL -n $NAMESPACE_ARANGODB get pods
+$SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get pods
 
 echo
 info "waiting for service to appear"
 
-while ! `$KUBECTL -n $NAMESPACE_ARANGODB get svc | fgrep NodePort | fgrep -v pending | fgrep -q -- -ea`; do
+while ! `$SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get svc | fgrep NodePort | fgrep -v pending | fgrep -q -- -ea`; do
     echo
-    $KUBECTL -n $NAMESPACE_ARANGODB get svc
+    $SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get svc
     sleep 15
 done
 
 echo
-$KUBECTL -n $NAMESPACE_ARANGODB get svc
+$SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get svc
 
 echo
 
@@ -746,8 +760,8 @@ echo "==========================================================================
 echo "Platform started"
 echo "============================================================================="
 
-IP=`kubectl get nodes -o wide | fgrep arangodb-control-plane | awk '{print $6}'`
-PORT=`kubectl -n $NAMESPACE_ARANGODB get svc | fgrep -- -ea | awk '{print $5}' | awk -F: '{print $2}' | awk -F/ '{print $1}'`
+IP=`$SUDO_DOCKER $KUBECTL get nodes -o wide | fgrep arangodb-control-plane | awk '{print $6}'`
+PORT=`$SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get svc | fgrep -- -ea | awk '{print $5}' | awk -F: '{print $2}' | awk -F/ '{print $1}'`
 
 info "In case you can reach the kind node directly, use the URL:"
 echo "https://$IP:$PORT/ui/"
