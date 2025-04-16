@@ -520,7 +520,8 @@ echo "==========================================================================
 info "Using AWS_REGION:  $AWS_REGION"
 info "Using AWS_PROFILE: $AWS_PROFILE"
 
-$AWS ecr list-images --repository-name release/dev/platform-ui/ui --output text || \
+$AWS --region $AWS_REGION --profile $AWS_PROFILE \
+     ecr list-images --repository-name release/dev/platform-ui/ui --output text || \
     (
 	echo
 	info 'ensure that your ~/.aws/credentials contains'
