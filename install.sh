@@ -1,6 +1,10 @@
 #!/usr/bin/env sh
 set -e
 
+# This must be portal accross different shell version!
+# DO NOT make any modern simplifications. They can break
+# on MacOS.
+
 AWS_REGION=${AWS_REGION:-us-east-1}
 AWS_PROFILE=${AWS_PROFILE:-platform}
 
@@ -11,6 +15,9 @@ REINSTALL=${REINSTALL:-0}
 CLUSTER=arangodb
 NUKE_CLUSTER=${NUKE_CLUSTER:-0}
 REUSE_CLUSTER=${REUSE_CLUSTER:-${REINSTALL}}
+
+USE_MINIKUBE=0
+REINSTALL_MINIKUBE=${REINSTALL_MINIKUBE:-${REINSTALL}}
 
 VERSION_KIND=0.27.0
 REINSTALL_KIND=${REINSTALL_KIND:-${REINSTALL}}
@@ -56,6 +63,19 @@ info "using install directory '$INSTALL_DIR'"
 CURRENT_DIR=`pwd`
 
 echo "============================================================================="
+echo "Checking environment"
+echo "============================================================================="
+
+IS_DARWIN=0
+
+if test `uname` = "Darwin"; then
+    info "running on darwin"
+    IS_DARWIN=1
+fi
+
+echo
+
+echo "============================================================================="
 echo "Checking if docker is available"
 echo "============================================================================="
 
@@ -68,47 +88,119 @@ fi
 echo
 
 echo "============================================================================="
-echo "Checking if kind is installed"
+echo "Checking if homebrew is available"
 echo "============================================================================="
 
-INSTALL_KIND=0
-KIND=/usr/local/bin/kind
-
-install_kind() {
-    cd $INSTALL_DIR
-    sudo mkdir -p /usr/local/bin
-    info "downloading kind version ${VERSION_KIND}" 
-    wget -q -O kind.exe \
-	 https://github.com/kubernetes-sigs/kind/releases/download/v${VERSION_KIND}/kind-linux-amd64 \
-	|| fatal "download failed"
-    sudo mv kind.exe /usr/local/bin/kind
-    sudo chmod 755 /usr/local/bin/kind
-    sudo chown root:root /usr/local/bin/kind
-    info "installed /usr/local/bin/kind"
-    ls -l /usr/local/bin/kind
-    if test `which kind` != ${KIND}; then
-      warn "cannot locate kind, ensure that '/usr/local/bin' is in the PATH"
+if test $IS_DARWIN -eq 1; then
+    if command_exists brew; then
+	info "good, brew command is available"
+    else
+	fatal "brew command not found, please install homebrew first"
     fi
-    cd $CURRENT_DIR
-}
 
-if command_exists kind; then
-    info "found kind command"
+    echo
+fi
 
-    if test "$REINSTALL_KIND" = "1"; then
-	info "reinstalling kind"
+if test $USE_MINIKUBE -eq 1; then
+
+    echo "============================================================================="
+    echo "Checking if minikube is installed"
+    echo "============================================================================="
+
+    INSTALL_MINIKUBE=0
+
+    install_minikube_darwin() {
+	info "installing minikube"
+	brew install minikube
+    }
+
+    if command_exists minikube; then
+	info "found minikube command"
+
+	if test $REINSTALL_MINIKUBE -eq 1; then
+	    info "reinstalling minikube"
+	    INSTALL_MINIKUBE=1
+	fi
+    else
+	info "missing minikube command, trying to install"
+	INSTALL_MINIKUBE=1
+    fi
+
+    if test $INSTALL_MINIKUBE -eq 1; then
+	install_minikube_darwin
+    fi
+
+    MINIKUBE=`which minikube`
+
+    echo
+
+else
+
+    echo "============================================================================="
+    echo "Checking if kind is installed"
+    echo "============================================================================="
+
+    INSTALL_KIND=0
+    KIND=/usr/local/bin/kind
+
+    install_kind_ubuntu() {
+	cd $INSTALL_DIR
+	sudo mkdir -p /usr/local/bin
+	info "downloading kind version ${VERSION_KIND}" 
+	wget -q -O kind.exe --no-check-certificate \
+	     https://github.com/kubernetes-sigs/kind/releases/download/v${VERSION_KIND}/kind-linux-amd64 \
+	    || fatal "download failed"
+	sudo mv kind.exe /usr/local/bin/kind
+	sudo chmod 755 /usr/local/bin/kind
+	sudo chown root:root /usr/local/bin/kind
+	info "installed /usr/local/bin/kind"
+	ls -l /usr/local/bin/kind
+	if test `which kind` != ${KIND}; then
+	    warn "cannot locate kind, ensure that '/usr/local/bin' is in the PATH"
+	fi
+	cd $CURRENT_DIR
+    }
+
+    install_kind_darwin() {
+	cd $INSTALL_DIR
+	sudo mkdir -p /usr/local/bin
+	info "downloading kind version ${VERSION_KIND}" 
+	wget -q -O kind.exe --no-check-certificate \
+	     https://github.com/kubernetes-sigs/kind/releases/download/v${VERSION_KIND}/kind-darwin-arm64 \
+	    || fatal "download failed"
+	sudo mv kind.exe /usr/local/bin/kind
+	sudo chmod 755 /usr/local/bin/kind
+	sudo chown root:wheel /usr/local/bin/kind
+	info "installed /usr/local/bin/kind"
+	ls -l /usr/local/bin/kind
+	if test `which kind` != ${KIND}; then
+	    warn "cannot locate kind, ensure that '/usr/local/bin' is in the PATH"
+	fi
+	cd $CURRENT_DIR
+    }
+
+    if command_exists kind; then
+	info "found kind command"
+
+	if test "$REINSTALL_KIND" = "1"; then
+	    info "reinstalling kind"
+	    INSTALL_KIND=1
+	fi
+    else
+	info "missing kind command, trying to install"
 	INSTALL_KIND=1
     fi
-else
-    info "missing kind command, trying to install"
-    INSTALL_KIND=1
-fi
 
-if test "$INSTALL_KIND" = "1"; then
-    install_kind
-fi
+    if test "$INSTALL_KIND" = "1"; then
+	if test $IS_DARWIN -eq 1; then
+	    install_kind_darwin
+	else
+	    install_kind_ubuntu
+	fi
+    fi
 
-echo
+    echo
+fi
 
 echo "============================================================================="
 echo "Checking if kubectl is installed"
@@ -116,16 +208,22 @@ echo "==========================================================================
 
 INSTALL_KUBECTL=0
 
-install_kubectl() {
+install_kubectl_ubuntu() {
     info "using snap install"
     sudo snap install --classic kubectl
+    info "installed kubectl"
+}
+
+install_kubectl_darwin() {
+    info "using brew install"
+    brew install kubectl
     info "installed kubectl"
 }
 
 if command_exists kubectl; then
     info "found kubectl command"
 
-    if test "$REINSTALL_KUBECTL" = "1"; then
+    if test $REINSTALL_KUBECTL -eq 1; then
 	info "reinstalling kubectl"
 	INSTALL_KUBECTL=1
     fi
@@ -134,8 +232,12 @@ else
     INSTALL_KUBECTL=1
 fi
 
-if test "$INSTALL_KUBECTL" = "1"; then
-    install_kubectl
+if test $INSTALL_KUBECTL -eq 1; then
+    if test $IS_DARWIN -eq 1; then
+	install_kubectl_darwin
+    else
+	install_kubectl_ubuntu
+    fi
 fi
 
 KUBECTL=`which kubectl`
@@ -148,16 +250,22 @@ echo "==========================================================================
 
 INSTALL_HELM=0
 
-install_helm() {
+install_helm_ubuntu() {
     info "using snap install"
     sudo snap install --classic helm
+    info "installed helm"
+}
+
+install_helm_darwin() {
+    info "using brew install"
+    brew install helm
     info "installed helm"
 }
 
 if command_exists helm; then
     info "found helm command"
 
-    if test "$REINSTALL_HELM" = "1"; then
+    if test $REINSTALL_HELM -eq 1; then
 	info "reinstalling helm"
 	INSTALL_HELM=1
     fi
@@ -166,8 +274,12 @@ else
     INSTALL_HELM=1
 fi
 
-if test "$INSTALL_HELM" = "1"; then
-    install_helm
+if test $INSTALL_HELM -eq 1; then
+    if test $IS_DARWIN -eq 1; then
+	install_helm_darwin
+    else
+	install_helm_ubuntu
+    fi
 fi
 
 HELM=`which helm`
@@ -181,11 +293,11 @@ echo "==========================================================================
 INSTALL_AOP=0
 AOP=/usr/local/bin/arangodb_operator_platform
 
-install_aop() {
+install_aop_ubuntu() {
     cd $INSTALL_DIR
     sudo mkdir -p /usr/local/bin
     info "downloading arangodb_operator_platform version ${VERSION_AOP}"
-    wget -q -O aop.exe \
+    wget -q -O aop.exe --no-check-certificate \
 	 https://github.com/arangodb/kube-arangodb/releases/download/${VERSION_AOP}/arangodb_operator_platform_linux_amd64 \
 	 || fatal "download failed"
     sudo mv aop.exe /usr/local/bin/arangodb_operator_platform
@@ -201,10 +313,30 @@ install_aop() {
     cd $CURRENT_DIR
 }
 
+install_aop_darwin() {
+    cd $INSTALL_DIR
+    sudo mkdir -p /usr/local/bin
+    info "downloading arangodb_operator_platform version ${VERSION_AOP}"
+    wget -q -O aop.exe --no-check-certificate \
+	 https://github.com/arangodb/kube-arangodb/releases/download/${VERSION_AOP}/arangodb_operator_platform_darwin_arm64 \
+	 || fatal "download failed"
+    sudo mv aop.exe /usr/local/bin/arangodb_operator_platform
+    sudo chmod 755 /usr/local/bin/arangodb_operator_platform
+    sudo chown root:wheel /usr/local/bin/arangodb_operator_platform
+    sudo rm -f /usr/local/bin/aop
+    sudo ln -s /usr/local/bin/arangodb_operator_platform /usr/local/bin/aop
+    info "installed /usr/local/bin/arangodb_operator_platform"
+    ls -l /usr/local/bin/arangodb_operator_platform
+    if test `which arangodb_operator_platform` != ${AOP}; then
+      warn "cannot locate arangodb_operator_platform, ensure that '/usr/local/bin' is in the PATH"
+    fi
+    cd $CURRENT_DIR
+}
+
 if command_exists arangodb_operator_platform; then
     info "found arangodb_operator_platform command"
 
-    if test "$REINSTALL_AOP" = "1"; then
+    if test $REINSTALL_AOP -eq 1; then
 	info "reinstalling arangodb_operator_platform"
 	INSTALL_AOP=1
     fi
@@ -213,8 +345,12 @@ else
     INSTALL_AOP=1
 fi
 
-if test "$INSTALL_AOP" = "1"; then
-    install_aop
+if test $INSTALL_AOP -eq 1; then
+    if test $IS_DARWIN -eq 1; then
+	install_aop_darwin
+    else
+	install_aop_ubuntu
+    fi
 fi
 
 echo
@@ -225,20 +361,26 @@ echo "==========================================================================
 
 INSTALL_AWS=0
 
-install_aws() {
+install_aws_ubuntu() {
     cd $INSTALL_DIR
-    info "using apt install"
-    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+    info "using wget install"
+    wget -O "awscliv2.zip" "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
     unzip awscliv2.zip
     sudo ./aws/install
     info "installed aws"
     cd $CURRENT_DIR
 }
 
+install_aws_darwin() {
+    info "using brew install"
+    brew install awscli
+    info "installed aws"
+}
+
 if command_exists aws; then
     info "found aws command"
 
-    if test "$REINSTALL_AWS" = "1"; then
+    if test $REINSTALL_AWS -eq 1; then
 	info "reinstalling aws"
 	INSTALL_AWS=1
     fi
@@ -247,8 +389,12 @@ else
     INSTALL_AWS=1
 fi
 
-if test "$INSTALL_AWS" = "1"; then
-    install_aws
+if test $INSTALL_AWS -eq 1; then
+    if test $IS_DARWIN -eq 1; then
+	install_aws_darwin
+    else
+	install_aws_ubuntu
+    fi
 fi
 
 AWS=`which aws`
@@ -261,28 +407,32 @@ echo "==========================================================================
 
 CREATE_CLUSTER=1
 
-info "checking if a cluster ${CLUSTER} already exists"
+if test $USE_MINIKUBE -eq 1; then
+    $MINIKUBE start
+else
+    info "checking if a cluster ${CLUSTER} already exists"
 
-if $KIND get clusters | grep -s "^${CLUSTER}$"; then
-    info "a cluster '${CLUSTER}' already exists"
+    if $KIND get clusters | grep -s "^${CLUSTER}$"; then
+	info "a cluster '${CLUSTER}' already exists"
 
-    if test "$NUKE_CLUSTER" = "1"; then
-	info "nuking this cluster"
-	$KIND delete cluster --name ${CLUSTER}
-    elif test "$REUSE_CLUSTER" != "1"; then
-        fatal "cluster with name '${CLUSTER}' already exists. Use CLUSTER=...
+	if test $NUKE_CLUSTER -eq 1; then
+	    info "nuking this cluster"
+	    $KIND delete cluster --name ${CLUSTER}
+	elif test $REUSE_CLUSTER -ne 1; then
+            fatal "cluster with name '${CLUSTER}' already exists. Use CLUSTER=...
        to use a different namespace. Use NUKE_CLUSTER=1 to nuke and
        reinstall this namespace. Use REUSE_CLUSTER=1 to reuse this cluster,
        you need to ensure that there are no leftovers from previous runs."
-    else
-	info "reusing cluster '${CLUSTER}', please make sure it is cleaned."
-	CREATE_CLUSTER=0
+	else
+	    info "reusing cluster '${CLUSTER}', please make sure it is cleaned."
+	    CREATE_CLUSTER=0
+	fi
     fi
-fi
 
-if test "$CREATE_CLUSTER" = "1"; then
-    info "creating cluster '${CLUSTER}'"
-    $KIND create cluster --name ${CLUSTER}
+    if test $CREATE_CLUSTER -eq 1; then
+	info "creating cluster '${CLUSTER}'"
+	$KIND create cluster --name ${CLUSTER}
+    fi
 fi
 
 $KUBECTL cluster-info --context kind-${CLUSTER}
@@ -298,7 +448,7 @@ AWS_REGION=$AWS_REGION \
     $AWS ecr list-images --repository-name release/dev/platform-ui/ui --output text || \
     (
 	echo
-	info "ensure that your ~/.aws/credential contains"
+	info 'ensure that your ~/.aws/credentials contains'
 	echo
 	echo "[platform]"
 	echo "aws_access_key_id     = ..."
@@ -315,13 +465,13 @@ echo "==========================================================================
 
 info "generating ECR token"
 TOKEN=$(aws --profile $AWS_PROFILE ecr get-login-password --region $AWS_REGION)
-AUTH=$(echo -n "AWS:$TOKEN" | base64 -w 0)
+AUTH=$(echo "AWS:$TOKEN" | tr -d "\n" | base64 | tr -d "\n")
 info "ECR token generated"
 
 cd $INSTALL_DIR
-echo -n "{\"auths\":{\"889010145541.dkr.ecr.us-east-1.amazonaws.com\":{\"auth\":\"$AUTH\"}}}" > token.json
+echo "{\"auths\":{\"889010145541.dkr.ecr.us-east-1.amazonaws.com\":{\"auth\":\"$AUTH\"}}}" > token.json
 
-TOKEN64=`base64 -w 0 token.json`
+TOKEN64=`tr -d "\n" < token.json | base64 | tr -d "\n"`
 
 cat > secret.yaml <<EOF
 apiVersion: v1
@@ -377,13 +527,31 @@ echo "Installing the ARANGODB operator"
 echo "============================================================================="
 
 info "installing/upgrading operator in version ${VERSION_OPERATOR}"
-$HELM upgrade -n ${NAMESPACE_ARANGODB} -i operator \
-     https://github.com/arangodb/kube-arangodb/releases/download/${VERSION_OPERATOR}/kube-arangodb-${VERSION_OPERATOR}.tgz \
-     --set "webhooks.enabled=true" \
-     --set "certificate.enabled=true" \
-     --set "operator.args[0]=--deployment.feature.gateway=true"
+if test $IS_DARWIN -eq 1; then
+    $HELM upgrade -n ${NAMESPACE_ARANGODB} -i operator \
+	  https://github.com/arangodb/kube-arangodb/releases/download/${VERSION_OPERATOR}/kube-arangodb-${VERSION_OPERATOR}.tgz \
+	  --set "webhooks.enabled=true" \
+	  --set "certificate.enabled=true" \
+	  --set "operator.args[0]=--deployment.feature.gateway=true" \
+	  --set "operator.architectures={arm64}"
+else
+    $HELM upgrade -n ${NAMESPACE_ARANGODB} -i operator \
+	  https://github.com/arangodb/kube-arangodb/releases/download/${VERSION_OPERATOR}/kube-arangodb-${VERSION_OPERATOR}.tgz \
+	  --set "webhooks.enabled=true" \
+	  --set "certificate.enabled=true" \
+	  --set "operator.args[0]=--deployment.feature.gateway=true"
+fi
 
 $KUBECTL get pods -n ${NAMESPACE_ARANGODB}
+
+while $KUBECTL -n $NAMESPACE_ARANGODB get pods | fgrep arango-operator | fgrep -q ContainerCreating; do
+    echo
+    $KUBECTL -n $NAMESPACE_ARANGODB get pods
+    sleep 15
+done
+
+echo
+$KUBECTL -n $NAMESPACE_ARANGODB get pods
 
 echo
 
@@ -436,7 +604,25 @@ echo "==========================================================================
 cd $INSTALL_DIR
 
 info "creating simple deployment"
-cat > simple.yaml <<'EOF'
+if test $IS_DARWIN -eq 1; then
+    cat > simple.yaml <<'EOF'
+apiVersion: "database.arangodb.com/v1"
+kind: "ArangoDeployment"
+metadata:
+  name: "platform-simple-single"
+spec:
+  mode: Single
+  image: 'arangodb/enterprise:3.12.2'
+  gateway:
+    enabled: true
+    dynamic: true
+  gateways:
+    count: 1
+  architecture:
+    - arm64
+EOF
+else
+    cat > simple.yaml <<'EOF'
 apiVersion: "database.arangodb.com/v1"
 kind: "ArangoDeployment"
 metadata:
@@ -450,6 +636,7 @@ spec:
   gateways:
     count: 1
 EOF
+fi
 info "created simple.yaml"
 
 info "installing platform-simple-single"
@@ -526,6 +713,6 @@ info "Use 'root' with no password for login"
 
 echo
 info "Otherwise use ssh and port forwarding:"
-info "Forwarding via SSH: ssh -L 8529:$IP:$PORT HOST"
+info "Forwarding via SSH: ssh -N -L 8529:$IP:$PORT HOST"
 info "Forwaring URL: https://localhost:8529/ui/"
 
