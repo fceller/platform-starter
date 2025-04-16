@@ -787,7 +787,7 @@ PORT=`$SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get svc | fgrep -- -ea | awk 
 if test $IS_DARWIN -eq 1; then
     kubectl -n $NAMESPACE_ARANGODB patch service platform-simple-single-ea -p \
 	    '{"spec": {"ports": [{"port": 8529, "nodePort": 30000}]}}'
-    IP=127.0.0.1
+    IP=localhost
     PORT=30000
 fi
 
@@ -797,8 +797,10 @@ echo "https://$IP:$PORT/ui/"
 echo
 info "Use 'root' with no password for login"
 
-echo
-info "Otherwise use ssh and port forwarding:"
-info "Forwarding via SSH: ssh -N -L 8529:$IP:$PORT HOST"
-info "Forwaring URL: https://localhost:8529/ui/"
+if test $IS_DARWIN -ne 1; then
+    echo
+    info "Otherwise use ssh and port forwarding:"
+    info "Forwarding via SSH: ssh -N -L 8529:$IP:$PORT HOST"
+    info "Forwaring URL: https://localhost:8529/ui/"
+fi
 
