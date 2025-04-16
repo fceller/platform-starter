@@ -517,9 +517,10 @@ echo "==========================================================================
 echo "Checking access to ECR"
 echo "============================================================================="
 
-AWS_REGION=$AWS_REGION \
-    AWS_PROFILE=$AWS_PROFILE \
-    $AWS ecr list-images --repository-name release/dev/platform-ui/ui --output text || \
+info "Using AWS_REGION:  $AWS_REGION"
+info "Using AWS_PROFILE: $AWS_PROFILE"
+
+$AWS ecr list-images --repository-name release/dev/platform-ui/ui --output text || \
     (
 	echo
 	info 'ensure that your ~/.aws/credentials contains'
@@ -529,7 +530,7 @@ AWS_REGION=$AWS_REGION \
 	echo "aws_secret_access_key = ..."
 	echo
         fatal "cannot access ECR"
-     )
+    )
 
 echo
 
