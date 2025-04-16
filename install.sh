@@ -157,7 +157,6 @@ else
     echo "============================================================================="
 
     INSTALL_KIND=0
-    KIND=/usr/local/bin/kind
 
     install_kind_ubuntu() {
 	cd $INSTALL_DIR
@@ -171,9 +170,6 @@ else
 	sudo chown root:root /usr/local/bin/kind
 	info "installed /usr/local/bin/kind"
 	ls -l /usr/local/bin/kind
-	if test `which kind` != ${KIND}; then
-	    warn "cannot locate kind, ensure that '/usr/local/bin' is in the PATH"
-	fi
 	cd $CURRENT_DIR
     }
 
@@ -189,9 +185,6 @@ else
 	sudo chown root:wheel /usr/local/bin/kind
 	info "installed /usr/local/bin/kind"
 	ls -l /usr/local/bin/kind
-	if test `which kind` != ${KIND}; then
-	    warn "cannot locate kind, ensure that '/usr/local/bin' is in the PATH"
-	fi
 	cd $CURRENT_DIR
     }
 
@@ -214,6 +207,8 @@ else
 	    install_kind_ubuntu
 	fi
     fi
+
+    KIND=`which kind`
 
     echo
 fi
