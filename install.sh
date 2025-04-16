@@ -35,6 +35,8 @@ VERSION_CERT=1.17.1
 
 REINSTALL_AWS=${REINSTALL_AWS:-0}
 
+REINSTALL_UNZIP=${REINSTALL_UNZIP:-0}
+
 command_exists() {
     if command -v "$1" >/dev/null 2>&1; then
 	return 0
@@ -203,6 +205,48 @@ else
 fi
 
 echo "============================================================================="
+echo "Checking if unzip is installed"
+echo "============================================================================="
+
+INSTALL_UNZIP=0
+
+install_unzip_ubuntu() {
+    info "using apt install"
+    sudo apt install unzip
+    info "installed unzip"
+}
+
+install_unzip_darwin() {
+    info "using brew install"
+    brew install unzip
+    info "installed unzip"
+}
+
+if command_exists unzip; then
+    info "found unzip command"
+
+    if test $REINSTALL_UNZIP -eq 1; then
+	info "reinstalling unzip"
+	INSTALL_UNZIP=1
+    fi
+else
+    info "missing unzip command, trying to install"
+    INSTALL_UNZIP=1
+fi
+
+if test $INSTALL_UNZIP -eq 1; then
+    if test $IS_DARWIN -eq 1; then
+	install_unzip_darwin
+    else
+	install_unzip_ubuntu
+    fi
+fi
+
+UNZIP=`which unzip`
+
+echo
+
+echo "============================================================================="
 echo "Checking if kubectl is installed"
 echo "============================================================================="
 
@@ -365,7 +409,7 @@ install_aws_ubuntu() {
     cd $INSTALL_DIR
     info "using wget install"
     wget -O "awscliv2.zip" "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
-    unzip awscliv2.zip
+    $UNZIP awscliv2.zip
     sudo ./aws/install
     info "installed aws"
     cd $CURRENT_DIR
