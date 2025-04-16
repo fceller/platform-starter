@@ -497,7 +497,9 @@ done
 echo
 $KUBECTL -n $NAMESPACE_ARANGODB get pods
 
+echo
 info "waiting for service to appear"
+
 while ! `$KUBECTL -n $NAMESPACE_ARANGODB get svc | fgrep NodePort | fgrep -v pending | fgrep -q -- -ea`; do
     echo
     $KUBECTL -n $NAMESPACE_ARANGODB get svc
