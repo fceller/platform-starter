@@ -471,11 +471,12 @@ echo
 
 info "waiting for pods to show up"
 while test `$KUBECTL -n $NAMESPACE_ARANGODB get pods | wc -l` -lt 5; do
+    echo
     $KUBECTL -n $NAMESPACE_ARANGODB get pods
     sleep 15
-    echo
 done
 
+echo
 $KUBECTL -n $NAMESPACE_ARANGODB get pods
 
 if $KUBECTL -n $NAMESPACE_ARANGODB get pods | grep "\(ErrImagePull\|ImagePullBackOff\)"; then
@@ -488,22 +489,22 @@ echo
 info "waiting for pods to run"
 
 while test `$KUBECTL -n $NAMESPACE_ARANGODB get pods | fgrep Running | wc -l` -lt 4; do
+    echo
     $KUBECTL -n $NAMESPACE_ARANGODB get pods
     sleep 15
-    echo
 done
 
 echo
-
 $KUBECTL -n $NAMESPACE_ARANGODB get pods
 
 info "waiting for service to appear"
 while ! `$KUBECTL -n $NAMESPACE_ARANGODB get svc | fgrep NodePort | fgrep -v pending | fgrep -q -- -ea`; do
+    echo
     $KUBECTL -n $NAMESPACE_ARANGODB get svc
     sleep 15
-    echo
 done
 
+echo
 $KUBECTL -n $NAMESPACE_ARANGODB get svc
 
 echo
