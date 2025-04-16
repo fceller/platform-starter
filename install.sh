@@ -240,7 +240,7 @@ install_cert_manager() {
     info "deleting old CRD"
     $KUBECTL delete crd --all
 
-    info "installing the cert-manager"
+    info "installing the cert-manager (might take a few minutes)"
     $HELM install cert-manager jetstack/cert-manager \
 	 --namespace ${NAMESPACE_CERT} \
 	 --create-namespace \
@@ -293,7 +293,7 @@ spec:
   template:
     pod:
       imagePullSecrets:
-        - arangodb-secret
+        - arangodb-image-secret
     priority: 129
 EOF
 
@@ -311,6 +311,7 @@ info "installing platform registry"
 $AOP -n $NAMESPACE_ARANGODB registry install \
     https://github.com/arangodb/arangodb-platform-config/blob/development/configuration.yml
 
+info "installing platform ui (might take a few minutes)"
 $AOP -n $NAMESPACE_ARANGODB registry install arangodb-platform-ui
 
 echo
@@ -351,6 +352,19 @@ $AOP -n $NAMESPACE_ARANGODB service enable-service platform-simple-single arango
 
 echo
 
+info "waiting for pods to show up"
+while test `$KUBECTL -n $NAMESPACE_ARANGODB get pods | wc -l` -lt 5; do
+    $KUBECTL -n $NAMESPACE_ARANGODB get pods
+    sleep 15
+    echo
+done
+
 $KUBECTL -n $NAMESPACE_ARANGODB get pods
+
+if $KUBECTL -n $NAMESPACE_ARANGODB get pods | grep "\(ErrImagePull\|ImagePullBackOff\)"; then
+  echo
+  info "check 'kubectl -n arangodb -n $NAMESPACE_ARANGODB logs POD'"
+  fatal "cannot pull image"
+fi
 
 echo
