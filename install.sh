@@ -281,7 +281,7 @@ if $KIND get clusters | grep -s "^${CLUSTER}$"; then
 fi
 
 if test "$CREATE_CLUSTER" = "1"; then
-    info "creatign cluster '${CLUSTER}'"
+    info "creating cluster '${CLUSTER}'"
     $KIND create cluster --name ${CLUSTER}
 fi
 
