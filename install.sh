@@ -5,8 +5,8 @@ set -e
 # DO NOT make any modern simplifications. They can break
 # on MacOS.
 
-AWS_REGION=${AWS_REGION:-us-east-1}
-AWS_PROFILE=${AWS_PROFILE:-platform}
+AWS_REGION=${ARANGODB_REGION:-us-east-1}
+AWS_PROFILE=${ARANGODB_PROFILE:-platform}
 
 NAMESPACE_ARANGODB=${NAMESPACE_ARANGODB:-arangodb}
 
