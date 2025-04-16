@@ -1,4 +1,11 @@
 #!/usr/bin/env sh
+
+AWS_REGION=${AWS_REGION:-us-east-1}
+AWS_PROFILE=${AWS_PROFILE:-platform}
+
+NAMESPACE_ARANGODB=${NAMESPACE_ARANGODB:-arangodb}
+REINSTALL_AWS=${REINSTALL_AWS:-0}
+
 set -e
 
 command_exists() {
@@ -33,7 +40,6 @@ echo "Checking if aws is available"
 echo "============================================================================="
 
 INSTALL_AWS=0
-REINSTALL_AWS=${REINSTALL_AWS:-0}
 
 install_aws() {
     cd $INSTALL_DIR
@@ -71,9 +77,6 @@ echo "==========================================================================
 echo "Checking access to ECR"
 echo "============================================================================="
 
-AWS_REGION=${AWS_REGION:-us-east-1}
-AWS_PROFILE=${AWS_PROFILE:-platform}
-
 AWS_REGION=$AWS_REGION \
     AWS_PROFILE=$AWS_PROFILE \
     $AWS ecr list-images --repository-name release/dev/platform-ui/ui --output text || \
@@ -109,14 +112,14 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: arangodb-ecr-secret
-  namespace: default
+  namespace: $NAMESPACE_ARANGODB
 data:
   .dockerconfigjson: $TOKEN64
 type: kubernetes.io/dockerconfigjson
 EOF
 
 info "creating secret 'arangodb-ecr-secret'"
-kubectl apply -f secret.yaml
+kubectl -n $NAMESPACE_ARANGODB apply -f secret.yaml
 
 cd $CURRENT_DIR
 rm -rf $INSTALL_DIR

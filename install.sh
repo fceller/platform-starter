@@ -1,6 +1,33 @@
 #!/usr/bin/env sh
 set -e
 
+AWS_REGION=${AWS_REGION:-us-east-1}
+AWS_PROFILE=${AWS_PROFILE:-platform}
+
+NAMESPACE_ARANGODB=${NAMESPACE_ARANGODB:-arangodb}
+
+REINSTALL=${REINSTALL:-0}
+
+CLUSTER=arangodb
+NUKE_CLUSTER=${NUKE_CLUSTER:-0}
+REUSE_CLUSTER=${REUSE_CLUSTER:-${REINSTALL}}
+
+VERSION_KIND=0.27.0
+REINSTALL_KIND=${REINSTALL_KIND:-${REINSTALL}}
+
+VERSION_OPERATOR=1.2.47
+
+VERSION_AOP=1.2.47
+REINSTALL_AOP=${REINSTALL_AOP:-${REINSTALL}}
+
+REINSTALL_KUBECTL=${REINSTALL_KUBECTL:-${REINSTALL}}
+REINSTALL_HELM=${REINSTALL_HELM:-${REINSTALL}}
+
+NAMESPACE_CERT=cert-manager
+VERSION_CERT=1.17.1
+
+REINSTALL_AWS=${REINSTALL_AWS:-0}
+
 command_exists() {
     if command -v "$1" >/dev/null 2>&1; then
 	return 0
@@ -22,6 +49,12 @@ fatal() {
     exit 1
 }
 
+INSTALL_DIR=`mktemp -d`
+chmod 700 $INSTALL_DIR
+info "using install directory '$INSTALL_DIR'"
+
+CURRENT_DIR=`pwd`
+
 echo "============================================================================="
 echo "Checking if docker is available"
 echo "============================================================================="
@@ -39,17 +72,16 @@ echo "Checking if kind is installed"
 echo "============================================================================="
 
 INSTALL_KIND=0
-VERSION_KIND=0.27.0
-REINSTALL_KIND=${REINSTALL_KIND:-0}
 KIND=/usr/local/bin/kind
 
 install_kind() {
+    cd $INSTALL_DIR
     sudo mkdir -p /usr/local/bin
     info "downloading kind version ${VERSION_KIND}" 
-    wget -q -O /tmp/kind.$$ \
+    wget -q -O kind.exe \
 	 https://github.com/kubernetes-sigs/kind/releases/download/v${VERSION_KIND}/kind-linux-amd64 \
 	|| fatal "download failed"
-    sudo mv /tmp/kind.$$ /usr/local/bin/kind
+    sudo mv kind.exe /usr/local/bin/kind
     sudo chmod 755 /usr/local/bin/kind
     sudo chown root:root /usr/local/bin/kind
     info "installed /usr/local/bin/kind"
@@ -57,6 +89,7 @@ install_kind() {
     if test `which kind` != ${KIND}; then
       warn "cannot locate kind, ensure that '/usr/local/bin' is in the PATH"
     fi
+    cd $CURRENT_DIR
 }
 
 if command_exists kind; then
@@ -82,7 +115,6 @@ echo "Checking if kubectl is installed"
 echo "============================================================================="
 
 INSTALL_KUBECTL=0
-REINSTALL_KUBECTL=${REINSTALL_KUBECTL:-0}
 
 install_kubectl() {
     info "using snap install"
@@ -115,7 +147,6 @@ echo "Checking if helm is installed"
 echo "============================================================================="
 
 INSTALL_HELM=0
-REINSTALL_HELM=${REINSTALL_HELM:-0}
 
 install_helm() {
     info "using snap install"
@@ -148,17 +179,16 @@ echo "Checking if arangodb_operator_platform is installed"
 echo "============================================================================="
 
 INSTALL_AOP=0
-VERSION_AOP=1.2.47
-REINSTALL_AOP=${REINSTALL_AOP:-0}
 AOP=/usr/local/bin/arangodb_operator_platform
 
 install_aop() {
+    cd $INSTALL_DIR
     sudo mkdir -p /usr/local/bin
     info "downloading arangodb_operator_platform version ${VERSION_AOP}"
-    wget -q -O /tmp/aop.$$ \
+    wget -q -O aop.exe \
 	 https://github.com/arangodb/kube-arangodb/releases/download/${VERSION_AOP}/arangodb_operator_platform_linux_amd64 \
 	 || fatal "download failed"
-    sudo mv /tmp/aop.$$ /usr/local/bin/arangodb_operator_platform
+    sudo mv aop.exe /usr/local/bin/arangodb_operator_platform
     sudo chmod 755 /usr/local/bin/arangodb_operator_platform
     sudo chown root:root /usr/local/bin/arangodb_operator_platform
     sudo rm -f /usr/local/bin/aop
@@ -168,6 +198,7 @@ install_aop() {
     if test `which arangodb_operator_platform` != ${AOP}; then
       warn "cannot locate arangodb_operator_platform, ensure that '/usr/local/bin' is in the PATH"
     fi
+    cd $CURRENT_DIR
 }
 
 if command_exists arangodb_operator_platform; then
@@ -189,12 +220,45 @@ fi
 echo
 
 echo "============================================================================="
+echo "Checking if aws is available"
+echo "============================================================================="
+
+INSTALL_AWS=0
+
+install_aws() {
+    cd $INSTALL_DIR
+    info "using apt install"
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+    unzip awscliv2.zip
+    sudo ./aws/install
+    info "installed aws"
+    cd $CURRENT_DIR
+}
+
+if command_exists aws; then
+    info "found aws command"
+
+    if test "$REINSTALL_AWS" = "1"; then
+	info "reinstalling aws"
+	INSTALL_AWS=1
+    fi
+else
+    info "missing aws command, trying to install"
+    INSTALL_AWS=1
+fi
+
+if test "$INSTALL_AWS" = "1"; then
+    install_aws
+fi
+
+AWS=`which aws`
+
+echo
+
+echo "============================================================================="
 echo "create a new K8S cluster"
 echo "============================================================================="
 
-CLUSTER=arangodb
-NUKE_CLUSTER=${NUKE_CLUSTER:-0}
-REUSE_CLUSTER=${REUSE_CLUSTER:-0}
 CREATE_CLUSTER=1
 
 info "checking if a cluster ${CLUSTER} already exists"
@@ -226,11 +290,61 @@ $KUBECTL cluster-info --context kind-${CLUSTER}
 echo
 
 echo "============================================================================="
-echo "Installing the certificate manager"
+echo "Checking access to ECR"
 echo "============================================================================="
 
-NAMESPACE_CERT=cert-manager
-VERSION_CERT=1.17.1
+AWS_REGION=$AWS_REGION \
+    AWS_PROFILE=$AWS_PROFILE \
+    $AWS ecr list-images --repository-name release/dev/platform-ui/ui --output text || \
+    (
+	echo
+	info "ensure that your ~/.aws/credential contains"
+	echo
+	echo "[platform]"
+	echo "aws_access_key_id     = ..."
+	echo "aws_secret_access_key = ..."
+	echo
+        fatal "cannot access ECR"
+     )
+
+echo
+
+echo "============================================================================="
+echo "Generating TOKEN"
+echo "============================================================================="
+
+info "generating ECR token"
+TOKEN=$(aws --profile $AWS_PROFILE ecr get-login-password --region $AWS_REGION)
+AUTH=$(echo -n "AWS:$TOKEN" | base64 -w 0)
+info "ECR token generated"
+
+cd $INSTALL_DIR
+echo -n "{\"auths\":{\"889010145541.dkr.ecr.us-east-1.amazonaws.com\":{\"auth\":\"$AUTH\"}}}" > token.json
+
+TOKEN64=`base64 -w 0 token.json`
+
+cat > secret.yaml <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: arangodb-ecr-secret
+  namespace: $NAMESPACE_ARANGODB
+data:
+  .dockerconfigjson: $TOKEN64
+type: kubernetes.io/dockerconfigjson
+EOF
+
+info "creating secret 'arangodb-ecr-secret'"
+kubectl create namespace $NAMESPACE_ARANGODB
+kubectl -n $NAMESPACE_ARANGODB apply -f secret.yaml
+
+cd $CURRENT_DIR
+
+echo
+
+echo "============================================================================="
+echo "Installing the certificate manager"
+echo "============================================================================="
 
 install_cert_manager() {
     info "adding jetstack repository"
@@ -242,8 +356,7 @@ install_cert_manager() {
 
     info "installing the cert-manager (might take a few minutes)"
     $HELM install cert-manager jetstack/cert-manager \
-	 --namespace ${NAMESPACE_CERT} \
-	 --create-namespace \
+	 --namespace ${NAMESPACE_CERT} --create-namespace \
 	 --version v${VERSION_CERT} \
 	 --set crds.enabled=true
 
@@ -263,11 +376,8 @@ echo "==========================================================================
 echo "Installing the ARANGODB operator"
 echo "============================================================================="
 
-NAMESPACE_ARANGODB=arangodb
-VERSION_OPERATOR=1.2.47
-
 info "installing/upgrading operator in version ${VERSION_OPERATOR}"
-$HELM upgrade -n ${NAMESPACE_ARANGODB} --create-namespace -i operator \
+$HELM upgrade -n ${NAMESPACE_ARANGODB} -i operator \
      https://github.com/arangodb/kube-arangodb/releases/download/${VERSION_OPERATOR}/kube-arangodb-${VERSION_OPERATOR}.tgz \
      --set "webhooks.enabled=true" \
      --set "certificate.enabled=true" \
@@ -281,7 +391,9 @@ echo "==========================================================================
 echo "Installing a profile with credentials"
 echo "============================================================================="
 
-cat > /tmp/profile.$$.yaml <<'EOF'
+cd $INSTALL_DIR
+
+cat > profile.yaml <<'EOF'
 apiVersion: scheduler.arangodb.com/v1beta1
 kind: ArangoProfile
 metadata:
@@ -293,13 +405,14 @@ spec:
   template:
     pod:
       imagePullSecrets:
-        - arangodb-image-secret
+        - arangodb-ecr-secret
     priority: 129
 EOF
 
-info "installing profile /tmp/profile.$$.yaml"
-$KUBECTL apply -f /tmp/profile.$$.yaml
-rm -f /tmp/profile.$$.yaml
+info "installing profile `pwd`/profile.yaml"
+$KUBECTL -n $NAMESPACE_ARANGODB apply -f profile.yaml
+
+cd $CURRENT_PWD
 
 echo
 
@@ -320,8 +433,10 @@ echo "==========================================================================
 echo "Creating simple deployment"
 echo "============================================================================="
 
+cd $INSTALL_DIR
+
 info "creating simple deployment"
-cat > /tmp/simple.$$.yaml <<'EOF'
+cat > simple.yaml <<'EOF'
 apiVersion: "database.arangodb.com/v1"
 kind: "ArangoDeployment"
 metadata:
@@ -335,11 +450,13 @@ spec:
   gateways:
     count: 1
 EOF
-info "created /tmp/simple.$$.yaml"
+info "created simple.yaml"
 
 info "installing platform-simple-single"
 
-$KUBECTL apply -n $NAMESPACE_ARANGODB -f /tmp/simple.$$.yaml
+$KUBECTL apply -n $NAMESPACE_ARANGODB -f simple.yaml
+
+cd $CURRENT_DIR
 
 echo
 
@@ -363,8 +480,15 @@ $KUBECTL -n $NAMESPACE_ARANGODB get pods
 
 if $KUBECTL -n $NAMESPACE_ARANGODB get pods | grep "\(ErrImagePull\|ImagePullBackOff\)"; then
   echo
-  info "check 'kubectl -n arangodb -n $NAMESPACE_ARANGODB logs POD'"
+  info "check 'kubectl -n $NAMESPACE_ARANGODB logs POD'"
   fatal "cannot pull image"
 fi
+
+while test `$KUBECTL -n $NAMESPACE_ARANGODB get pods | fgrep Running | wc -l` -lt 4; do
+    info "waiting for pods to start"
+    $KUBECTL -n $NAMESPACE_ARANGODB get pods
+    sleep 15
+    echo
+done
 
 echo
