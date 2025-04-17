@@ -801,3 +801,6 @@ if test $IS_DARWIN -ne 1; then
     info "Forwaring URL: https://localhost:8529/ui/"
 fi
 
+echo
+info "In order to destroy the cluster use"
+echo "kind delete cluster --name ${CLUSTER}"
