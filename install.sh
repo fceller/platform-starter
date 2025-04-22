@@ -84,6 +84,8 @@ echo "==========================================================================
 if command_exists docker; then
   info "good, docker command is available"
 else
+  warn "install docker using"
+  echo "sudo apt install docker.io"
   fatal "docker command not found, please install docker first"
 fi
 
