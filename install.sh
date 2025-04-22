@@ -812,7 +812,7 @@ IP=`$SUDO_DOCKER $KUBECTL get nodes -o wide | fgrep arangodb-control-plane | awk
 PORT=`$SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get svc | fgrep -- -ea | awk '{print $5}' | awk -F: '{print $2}' | awk -F/ '{print $1}'`
 
 if test "x$FORCE_PORT" != "x"; then
-    kubectl -n $NAMESPACE_ARANGODB patch service platform-simple-single-ea -p \
+    $SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB patch service platform-simple-single-ea -p \
 	    '{"spec": {"ports": [{"port": 8529, "nodePort": '$FORCE_PORT'}]}}'
     IP=localhost
     PORT="$FORCE_PORT"
