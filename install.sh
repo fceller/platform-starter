@@ -5,6 +5,8 @@ set -e
 # DO NOT make any modern simplifications. They can break
 # on MacOS.
 
+FORCE_PORT=${FORCE_PORT:-}
+
 AWS_REGION=${ARANGODB_REGION:-us-east-1}
 AWS_PROFILE=${ARANGODB_PROFILE:-platform}
 
@@ -83,6 +85,12 @@ if test -f /etc/os-release; then
     if fgrep -q 'NAME="Debian GNU/Linux"' /etc/os-release; then
         info "runing on Debian"
 	IS_DEBIAN=1
+    fi
+fi
+
+if test $IS_DARWIN -eq 1; then
+    if test "x$FORCE_PORT" = "x"; then
+        FORCE_PORT=30000
     fi
 fi
 
@@ -510,14 +518,14 @@ else
 	if test $IS_DARWIN -eq 1; then
 	    cd $INSTALL_DIR
 	
-	    cat > config.yaml <<'EOF'
+	    cat > config.yaml <<EOF
 apiVersion: kind.x-k8s.io/v1alpha4
 kind: Cluster
 nodes:
 - role: control-plane
   extraPortMappings:
-  - containerPort: 30000
-    hostPort: 30000
+  - containerPort: $FORCE_PORT
+    hostPort: $FORCE_PORT
     listenAddress: "0.0.0.0"
     protocol: tcp
 - role: worker
@@ -803,11 +811,11 @@ echo "==========================================================================
 IP=`$SUDO_DOCKER $KUBECTL get nodes -o wide | fgrep arangodb-control-plane | awk '{print $6}'`
 PORT=`$SUDO_DOCKER $KUBECTL -n $NAMESPACE_ARANGODB get svc | fgrep -- -ea | awk '{print $5}' | awk -F: '{print $2}' | awk -F/ '{print $1}'`
 
-if test $IS_DARWIN -eq 1; then
+if test "x$FORCE_PORT" != "x"; then
     kubectl -n $NAMESPACE_ARANGODB patch service platform-simple-single-ea -p \
-	    '{"spec": {"ports": [{"port": 8529, "nodePort": 30000}]}}'
+	    '{"spec": {"ports": [{"port": 8529, "nodePort": '$FORCE_PORT'}]}}'
     IP=localhost
-    PORT=30000
+    PORT="$FORCE_PORT"
 fi
 
 info "In case you can reach the kind node directly, use the URL:"
