@@ -77,6 +77,15 @@ fi
 
 echo
 
+IS_DEBIAN=0
+
+if test -f /etc/os-release; then
+    if fgrep -q 'NAME="Debian GNU/Linux"' /etc/os-release; then
+        info "runing on Debian"
+	IS_DEBIAN=1
+    fi
+fi
+
 echo "============================================================================="
 echo "Checking if docker is available"
 echo "============================================================================="
