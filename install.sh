@@ -265,7 +265,7 @@ INSTALL_KUBECTL=0
 
 install_kubectl_ubuntu() {
     info "using snap install"
-    sudo snap install --classic kubectl
+    sudo apt install kubectl || sudo snap install --classic kubectl
     info "installed kubectl"
 }
 
