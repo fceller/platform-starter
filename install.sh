@@ -315,9 +315,20 @@ echo "==========================================================================
 INSTALL_HELM=0
 
 install_helm_ubuntu() {
-    info "using snap install"
-    sudo snap install --classic helm
-    info "installed helm"
+    if test $IS_DEBIAN -eq 1; then
+        cd $INSTALL_DIR
+        info "using curl install"
+	wget -q -O get_helm.sh --no-check-certificate \
+            https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+	chmod 755 get_helm.sh
+        sudo ./get_helm.sh
+	info "installed helm"
+        cd $CURRENT_DIR
+    else
+        info "using snap install"
+        sudo snap install --classic helm
+        info "installed helm"
+    fi
 }
 
 install_helm_darwin() {
